@@ -7,14 +7,29 @@
         x:Class="AegisDocs.UI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
-        Title="AegisDocs.UI">
+        Title="AegisDocs - Legal Document AI">
 
     <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <TextBlock Text="{Binding Greeting}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-
+    <Grid RowDefinitions="Auto, *">
+        
+        <Button Grid.Row="0" 
+                Content="Загрузить тестовый договор" 
+                Command="{Binding LoadDocumentCommand}" 
+                Margin="10"
+                Padding="15, 10"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center"/>
+        
+        <!-- Прокручиваемая область для текста -->
+        <ScrollViewer Grid.Row="1" Margin="10">
+            <TextBlock Text="{Binding ExtractedText}" 
+                       TextWrapping="Wrap"
+                       LineHeight="24"
+                       FontSize="14"/>
+        </ScrollViewer>
+        
+    </Grid>
 </Window>

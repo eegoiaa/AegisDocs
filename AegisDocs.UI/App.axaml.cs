@@ -1,32 +1,42 @@
-using System.Linq;
-using AegisDocs.UI.ViewModels;
-using AegisDocs.UI.Views;
+using System;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Data.Core;
-using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
+using Microsoft.Extensions.DependencyInjection;
+using AegisDocs.UI.ViewModels;
+using AegisDocs.UI.Views;
+using AegisDocs.UI.Configuration;
 
-namespace AegisDocs.UI
+namespace AegisDocs.UI;
+
+public partial class App : Application
 {
-    public partial class App : Application
+    public static IServiceProvider? serviceProvider { get; private set; }
+
+    public override void Initialize()
     {
-        public override void Initialize()
-        {
-            AvaloniaXamlLoader.Load(this);
-        }
+        AvaloniaXamlLoader.Load(this);
+    }
 
-        public override void OnFrameworkInitializationCompleted()
+    public override void OnFrameworkInitializationCompleted()
+    {
+        var services = new ServiceCollection();
+        services.AddApplicationService();
+
+        serviceProvider = services.BuildServiceProvider();
+
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+
+            // Достаем ViewModel
+            var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
+
+            desktop.MainWindow = new MainWindow
             {
-                desktop.MainWindow = new MainWindow
-                {
-                    DataContext = new MainWindowViewModel(),
-                };
-            }
-
-            base.OnFrameworkInitializationCompleted();
+                DataContext = mainWindowViewModel
+            };
         }
+
+        base.OnFrameworkInitializationCompleted();
     }
 }

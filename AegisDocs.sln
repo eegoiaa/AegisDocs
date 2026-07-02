@@ -5,6 +5,8 @@ VisualStudioVersion = 17.14.36327.8 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AegisDocs.UI", "AegisDocs.UI\AegisDocs.UI.csproj", "{21E56443-FE38-469E-9072-4ADD9AF6F4CE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AegisDocs.Core", "AegisDocs.Core\AegisDocs.Core.csproj", "{B87A8215-C501-48F1-BD11-47E966A3A96C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{21E56443-FE38-469E-9072-4ADD9AF6F4CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{21E56443-FE38-469E-9072-4ADD9AF6F4CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{21E56443-FE38-469E-9072-4ADD9AF6F4CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B87A8215-C501-48F1-BD11-47E966A3A96C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B87A8215-C501-48F1-BD11-47E966A3A96C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B87A8215-C501-48F1-BD11-47E966A3A96C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B87A8215-C501-48F1-BD11-47E966A3A96C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
