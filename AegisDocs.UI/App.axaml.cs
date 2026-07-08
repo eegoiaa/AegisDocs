@@ -28,7 +28,6 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
 
-            // Достаем ViewModel
             var mainWindowViewModel = serviceProvider.GetRequiredService<MainWindowViewModel>();
 
             desktop.MainWindow = new MainWindow
