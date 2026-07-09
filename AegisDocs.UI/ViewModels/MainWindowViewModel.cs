@@ -41,21 +41,22 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             ExtractedText = "1. Читаем файл...";
+
+            // Читаем весь текст из документа
             var fullText = await Task.Run(() => _documentService.ExtractText(filePath));
 
-            // Берем для теста только первые 500 символов, чтобы не ждать вечность
-            var chunkToAnalyze = fullText.Length > 500 ? fullText.Substring(0, 500) : fullText;
-
-            ExtractedText = "2. Загружаем модель ИИ в память (это займет время при первом запуске)...\n\n" + chunkToAnalyze;
+            // Обновляем UI, показываем размер документа вместо его обрезки
+            ExtractedText = $"2. Запускаем ИИ-сервер (при первом запуске загрузка весов займет время)...\n\nДокумент успешно прочитан. Объем: {fullText.Length} символов.";
 
             string modelPath = @"D:\AI_models\qwen2.5-3b-instruct-q4_k_m.gguf";
             await _aiService.InitializeAsync(modelPath);
 
-            ExtractedText = "3. Нейросеть думает...\n\nТекст:\n" + chunkToAnalyze;
+            ExtractedText = "3. Нейросеть читает и анализирует ВЕСЬ договор. Пожалуйста, подождите...\n";
 
             string systemPrompt = "Ты опытный юрист. Кратко проанализируй следующий текст, укажи на возможные риски и найди ошибки в нем. Отвечай на русском языке.";
 
-            var aiResponse = await _aiService.AnalyzeTextAsync(systemPrompt, chunkToAnalyze, CancellationToken.None);
+            // Передаем fullText целиком, без обрезки!
+            var aiResponse = await _aiService.AnalyzeTextAsync(systemPrompt, fullText, CancellationToken.None);
 
             ExtractedText = $"=== ОТВЕТ ИИ ===\n\n{aiResponse}";
         }

@@ -1,70 +1,90 @@
 ﻿using AegisDocs.Core.Interfaces;
-using LLama;
-using LLama.Common;
+using System.Diagnostics;
+using System.IO.Pipes;
 using System.Text;
 
 namespace AegisDocs.Core.Services;
 
-public class LLamaAiService : ILocalAiService
+public class LLamaAiService : ILocalAiService, IDisposable
 {
-    private LLamaWeights? _weights;
-    private LLamaContext? _context;
+    private Process? _aiProcess;
+    private NamedPipeClientStream? _pipeClient;
+    private StreamReader? _reader;
+    private StreamWriter? _writer;
     private bool _isInitialized;
 
     public async Task InitializeAsync(string modelPath)
     {
         if (_isInitialized) return;
 
-        await Task.Run(() =>
-        {
-            var parameters = new ModelParams(modelPath)
-            {
-                ContextSize = 4096,
-                GpuLayerCount = 0,
-                MainGpu = 0,
-                UseMemorymap = false
-            };
+        Debug.WriteLine("[CLIENT-LOG] Начинаем инициализацию...");
 
-            _weights = LLamaWeights.LoadFromFile(parameters);
-            _context = _weights.CreateContext(parameters);
-            _isInitialized = true;
+        // 1. УБИВАЕМ ЗОМБИ-ПРОЦЕССЫ
+        Debug.WriteLine("[CLIENT-LOG] Очистка старых процессов сервера...");
+        foreach (var proc in Process.GetProcessesByName("AegisDocs.AiServer"))
+        {
+            try { proc.Kill(); Debug.WriteLine($"[CLIENT-LOG] Убит процесс {proc.Id}"); } catch { }
+        }
+
+        string serverExePath = @"D:\AegisDocsProject\AegisDocs\AegisDocs.AiServer\bin\Debug\net8.0\AegisDocs.AiServer.exe";
+        if (!File.Exists(serverExePath)) throw new FileNotFoundException($"Сервер не найден: {serverExePath}");
+
+        // 2. Запускаем чистый сервер
+        Debug.WriteLine("[CLIENT-LOG] Запуск нового сервера...");
+        _aiProcess = new Process
+        {
+            StartInfo = new ProcessStartInfo { FileName = serverExePath, UseShellExecute = true }
+        };
+        _aiProcess.Start();
+
+        // 3. Подключаемся к каналу связи
+        Debug.WriteLine("[CLIENT-LOG] Попытка подключения к трубе (ожидание до 60 сек)...");
+        await Task.Run(async () =>
+        {
+            _pipeClient = new NamedPipeClientStream(".", "AegisAiPipe", PipeDirection.InOut, PipeOptions.Asynchronous);
+            await _pipeClient.ConnectAsync(60000);
+
+            _reader = new StreamReader(_pipeClient, new UTF8Encoding(false));
+            _writer = new StreamWriter(_pipeClient, new UTF8Encoding(false)) { AutoFlush = true };
         });
+
+        _isInitialized = true;
+        Debug.WriteLine("[CLIENT-LOG] ИНИЦИАЛИЗАЦИЯ УСПЕШНА! Связь установлена.");
     }
 
     public async Task<string> AnalyzeTextAsync(string systemPrompt, string userText, CancellationToken cancellationToken)
     {
-        if (!_isInitialized || _context == null || _weights == null)
-            throw new InvalidOperationException("Модель не инициализирована!");
+        Debug.WriteLine("[CLIENT-LOG] Начат метод AnalyzeTextAsync...");
+        if (!_isInitialized || _writer == null || _reader == null) throw new InvalidOperationException("ИИ-сервер не запущен!");
 
-        var executor = new InteractiveExecutor(_context);
+        string combinedText = $"{systemPrompt} Текст договора: {userText}";
+        string cleanText = combinedText.Replace("\n", " ").Replace("\r", " ");
 
-        // Настройки генерации: низкая температура = меньше фантазии, больше юридической точности
-        var inferenceParams = new InferenceParams
+        return await Task.Run(async () =>
         {
-            MaxTokens = 1000,
-            SamplingPipeline = new LLama.Sampling.DefaultSamplingPipeline
+            try
             {
-                Temperature = 0.1f 
+                Debug.WriteLine("[CLIENT-LOG] Отправляем текст на сервер...");
+                await _writer.WriteLineAsync(cleanText);
+                await _writer.FlushAsync();
+                Debug.WriteLine("[CLIENT-LOG] Текст отправлен. Ждем ответ...");
+
+                string? response = await _reader.ReadLineAsync();
+                Debug.WriteLine("[CLIENT-LOG] Ответ от сервера получен!");
+                return response ?? "Ошибка: Сервер вернул пустой ответ.";
             }
-        };
-
-        string prompt = $"{systemPrompt}\n\nТекст для анализа:\n{userText}\n\nОтвет:";
-
-        var stringBuilder = new StringBuilder();
-
-        await foreach (var text in executor.InferAsync(prompt, inferenceParams, cancellationToken))
-        {
-            stringBuilder.Append(text);
-        }
-
-        return stringBuilder.ToString().Trim();
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CLIENT-LOG] ОШИБКА ПРИ ОБМЕНЕ: {ex.Message}");
+                return $"Критическая ошибка канала связи: {ex.Message}";
+            }
+        }, cancellationToken);
     }
 
     public void Dispose()
     {
-        _context?.Dispose();
-        _weights?.Dispose();
+        try { _writer?.WriteLine("EXIT"); } catch { }
+        _pipeClient?.Dispose();
+        if (_aiProcess != null && !_aiProcess.HasExited) { _aiProcess.Kill(); }
     }
-
-    
 }
