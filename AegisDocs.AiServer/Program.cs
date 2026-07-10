@@ -11,54 +11,24 @@ public class Program
     {
         Console.WriteLine("=== Запуск локального ИИ-сервера ===");
 
+        // Хардкод пути оставляем, как договаривались
         string modelPath = @"D:\AI_models\qwen2.5-3b-instruct-q4_k_m.gguf";
 
-        var parameters = new ModelParams(modelPath)
+        using var engine = new LlamaEngine();
+
+        try
         {
-            ContextSize = 4096,
-            GpuLayerCount = 0
-        };
+            Console.WriteLine("Грузим веса нейросети в память...");
+            engine.Initialize(modelPath);
+            Console.WriteLine("=== Модель успешно загружена! ===");
 
-        Console.WriteLine("Грузим веса нейросети в память...");
-        using var weights = LLamaWeights.LoadFromFile(parameters);
-        using var context = weights.CreateContext(parameters);
-        var executor = new InteractiveExecutor(context);
-
-        Console.WriteLine("=== Модель успешно загружена! ===");
-        Console.WriteLine("Ожидание подключения интерфейса Avalonia...");
-
-        // Открываем канал связи (Named Pipe)
-        using var pipeServer = new NamedPipeServerStream("AegisAiPipe", PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-        await pipeServer.WaitForConnectionAsync();
-        Console.WriteLine("=== Интерфейс подключен! ===");
-
-        using var reader = new StreamReader(pipeServer, new UTF8Encoding(false));
-        using var writer = new StreamWriter(pipeServer, new UTF8Encoding(false)) { AutoFlush = true };
-
-        while (true)
+            var ipcServer = new IpcServer(engine);
+            await ipcServer.StartAsync();
+        }
+        catch (Exception ex)
         {
-            string? textToAnalyze = await reader.ReadLineAsync();
-            if (string.IsNullOrEmpty(textToAnalyze)) continue;
-            if (textToAnalyze == "EXIT") break;
-
-            Console.WriteLine("Получен текст. Анализирую...");
-
-            // Наш базовый промпт. Позже мы его усложним для поиска скрытых рисков.
-            string prompt = $"Проанализируй юридический текст и найди риски. Отвечай по существу.\nТекст: {textToAnalyze}\nОтвет:";
-            var inferenceParams = new InferenceParams { MaxTokens = 1500 };
-
-            var sb = new StringBuilder();
-            await foreach (var token in executor.InferAsync(prompt, inferenceParams))
-            {
-                sb.Append(token);
-                Console.Write(token); 
-            }
-            Console.WriteLine();
-
-            string cleanResponse = sb.ToString().Replace("\n", " ").Replace("\r", "").Trim();
-            await writer.WriteLineAsync(cleanResponse);
-            await writer.FlushAsync();
-            Console.WriteLine("=== Ответ отправлен в UI ===");
+            Console.WriteLine($"[КРИТИЧЕСКАЯ ОШИБКА]: {ex.Message}");
+            Console.ReadLine(); // Держим консоль открытой, чтобы успеть прочитать ошибку
         }
     }
 }

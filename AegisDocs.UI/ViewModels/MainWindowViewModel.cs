@@ -42,10 +42,8 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             ExtractedText = "1. Читаем файл...";
 
-            // Читаем весь текст из документа
             var fullText = await Task.Run(() => _documentService.ExtractText(filePath));
 
-            // Обновляем UI, показываем размер документа вместо его обрезки
             ExtractedText = $"2. Запускаем ИИ-сервер (при первом запуске загрузка весов займет время)...\n\nДокумент успешно прочитан. Объем: {fullText.Length} символов.";
 
             string modelPath = @"D:\AI_models\qwen2.5-3b-instruct-q4_k_m.gguf";
@@ -55,7 +53,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
             string systemPrompt = "Ты опытный юрист. Кратко проанализируй следующий текст, укажи на возможные риски и найди ошибки в нем. Отвечай на русском языке.";
 
-            // Передаем fullText целиком, без обрезки!
             var aiResponse = await _aiService.AnalyzeTextAsync(systemPrompt, fullText, CancellationToken.None);
 
             ExtractedText = $"=== ОТВЕТ ИИ ===\n\n{aiResponse}";
