@@ -10,7 +10,9 @@ public class WordDocumentService : IDocumentService
     {
         var stringBuilder = new StringBuilder();
 
-        using (WordprocessingDocument wordDoc = WordprocessingDocument.Open(filePath, false))
+        using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+
+        using (WordprocessingDocument wordDoc = WordprocessingDocument.Open(stream, false))
         {
             var body = wordDoc.MainDocumentPart?.Document.Body;
 
