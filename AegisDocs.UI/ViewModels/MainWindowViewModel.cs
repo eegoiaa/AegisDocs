@@ -1,9 +1,12 @@
 ﻿using AegisDocs.Core.Interfaces;
 using AegisDocs.Core.Services;
 using AegisDocs.UI.Interfaces;
+using AegisDocs.UI.Models;
+using AegisDocs.UI.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
+using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -18,7 +21,15 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _extractedText = "Здесь появится текст документа...";
 
-    public MainWindowViewModel() { }
+    public ObservableCollection<PromptTemplate> Templates { get; }
+
+    [ObservableProperty]
+    private PromptTemplate? _selectedTemplate;
+
+    public MainWindowViewModel() 
+    {
+        Templates = new ObservableCollection<PromptTemplate>();
+    }
 
     public MainWindowViewModel(
         IDocumentService documentService,
@@ -28,6 +39,11 @@ public partial class MainWindowViewModel : ViewModelBase
         _documentService = documentService;
         _filePickerService = filePickerService;
         _aiService = aiService;
+
+        Templates = new ObservableCollection<PromptTemplate>(PromptProvider.GetDefaultTemplates());
+
+        if (Templates.Count > 0)
+            SelectedTemplate = Templates[0];
     }
 
     [RelayCommand]
@@ -46,12 +62,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
             ExtractedText = $"2. Запускаем ИИ-сервер (при первом запуске загрузка весов займет время)...\n\nДокумент успешно прочитан. Объем: {fullText.Length} символов.";
 
-            string modelPath = @"D:\AI_models\qwen2.5-3b-instruct-q4_k_m.gguf";
-            await _aiService.InitializeAsync(modelPath);
+            await _aiService.InitializeAsync("");
 
-            ExtractedText = "3. Нейросеть читает и анализирует ВЕСЬ договор. Пожалуйста, подождите...\n";
+            string currentMode = SelectedTemplate?.Name ?? "По умолчанию";
+            ExtractedText = $"3. Режим: {currentMode}\nНейросеть анализирует договор. Пожалуйста, подождите...\n";
 
-            string systemPrompt = "Ты опытный юрист. Кратко проанализируй следующий текст, укажи на возможные риски и найди ошибки в нем. Отвечай на русском языке.";
+            string systemPrompt = SelectedTemplate?.PromptText
+                ?? "Ты юрист. Найди ошибки в тексте.";
 
             var aiResponse = await _aiService.AnalyzeTextAsync(systemPrompt, fullText, CancellationToken.None);
 

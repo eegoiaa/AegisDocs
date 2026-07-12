@@ -1,7 +1,11 @@
 ﻿using System.IO.Pipes;
 using System.Text;
+using System.Text.Json;
 
 namespace AegisDocs.AiServer;
+
+public record AiRequestDto(string SystemPrompt, string DocumentText);
+public record AiResponseDto(string Answer, bool IsSuccess, string ErrorMessage);
 
 public class IpcServer
 {
@@ -18,7 +22,6 @@ public class IpcServer
 
         using var pipeServer = new NamedPipeServerStream("AegisAiPipe", PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
         await pipeServer.WaitForConnectionAsync();
-
         Console.WriteLine("=== Интерфейс подключен! ===");
 
         using var reader = new StreamReader(pipeServer, new UTF8Encoding(false));
@@ -26,28 +29,40 @@ public class IpcServer
 
         while (true)
         {
-            string? textToAnalyze = await reader.ReadLineAsync();
+            string? rawJsonLine = await reader.ReadLineAsync();
 
-            if (string.IsNullOrEmpty(textToAnalyze)) continue;
-            if (textToAnalyze == "EXIT")
+            if (string.IsNullOrEmpty(rawJsonLine)) continue;
+            if (rawJsonLine == "EXIT") break;
+
+            AiResponseDto responseObj;
+            try
             {
-                Console.WriteLine("Получена команда EXIT. Завершение работы сервера.");
-                break;
+                var request = JsonSerializer.Deserialize<AiRequestDto>(rawJsonLine);
+                if (request == null) throw new Exception("Пришел пустой JSON");
+
+                Console.WriteLine("Получен текст. Анализирую...");
+
+                string combinedPrompt = $"{request.SystemPrompt}\n\nТекст документа:\n{request.DocumentText}\n\nОтвет:";
+
+                var sb = new StringBuilder();
+                await foreach (var token in _engine.GenerateResponseAsync(combinedPrompt))
+                {
+                    sb.Append(token);
+                    Console.Write(token);
+                }
+                Console.WriteLine();
+
+                responseObj = new AiResponseDto(sb.ToString().Trim(), true, "");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ОШИБКА ОБРАБОТКИ]: {ex.Message}");
+                responseObj = new AiResponseDto("", false, ex.Message);
             }
 
-            Console.WriteLine("Получен текст. Анализирую...");
-            var sb = new StringBuilder();
-
-            await foreach (var token in _engine.GenerateResponseAsync(textToAnalyze))
-            {
-                sb.Append(token);
-                Console.Write(token);
-            }
-            Console.WriteLine();
-
-            string cleanResponse = sb.ToString().Replace("\n", " ").Replace("\r", "").Trim();
-
-            await writer.WriteLineAsync(cleanResponse);
+            // 4. Упаковываем ответ в JSON и отправляем ОДНОЙ строкой
+            string jsonResponse = JsonSerializer.Serialize(responseObj);
+            await writer.WriteLineAsync(jsonResponse);
             await writer.FlushAsync();
             Console.WriteLine("=== Ответ отправлен в UI ===");
         }

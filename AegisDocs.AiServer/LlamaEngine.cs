@@ -28,7 +28,7 @@ public class LlamaEngine : IDisposable
         if (_executor == null) throw new InvalidOperationException("Модель не инициализирована.");
 
         // Пока оставляем зашитый промпт тут, раз систему промптов отложили на потом
-        string prompt = $"Проанализируй юридический текст и найди риски. Отвечай по существу.\nТекст: {textToAnalyze}\nОтвет:";
+        string prompt = textToAnalyze;
         var inferenceParams = new InferenceParams { MaxTokens = 1500 };
 
         await foreach (var token in _executor.InferAsync(prompt, inferenceParams, cancellationToken))
