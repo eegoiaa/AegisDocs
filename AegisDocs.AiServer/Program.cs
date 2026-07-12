@@ -11,8 +11,14 @@ public class Program
     {
         Console.WriteLine("=== Запуск локального ИИ-сервера ===");
 
-        // Хардкод пути оставляем, как договаривались
-        string modelPath = @"D:\AI_models\qwen2.5-3b-instruct-q4_k_m.gguf";
+        if (args.Length == 0)
+        {
+            Console.WriteLine("[ОШИБКА] Не передан путь к модели! Запускайте сервер через главное приложение.");
+            Console.ReadLine();
+            return;
+        }
+
+        string modelPath = args[0];
 
         using var engine = new LlamaEngine();
 

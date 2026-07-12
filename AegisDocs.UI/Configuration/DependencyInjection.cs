@@ -1,6 +1,7 @@
 ﻿using AegisDocs.Core.Interfaces;
 using AegisDocs.Core.Ipc;
 using AegisDocs.Core.Processes;
+using AegisDocs.Core.Providers;
 using AegisDocs.Core.Services;
 using AegisDocs.UI.Interfaces;
 using AegisDocs.UI.Services;
@@ -19,6 +20,7 @@ public static class DependencyInjection
         services.AddSingleton<ILocalAiService, LLamaAiService>();
         services.AddTransient<IAiProcessManager, AiProcessManager>();
         services.AddTransient<IIpcClient, NamedPipeClient>();
+        services.AddTransient<IPathProvider, PathProvider>();
 
         return services;
     }

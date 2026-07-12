@@ -3,6 +3,6 @@
 public interface IAiProcessManager
 {
     void KillOldProcesses(string processName);
-    void StartProcess(string exePath);
+    void StartProcess(string exePath, string modelPath);
     void StopProcess();
 }
