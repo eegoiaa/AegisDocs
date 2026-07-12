@@ -1,7 +1,5 @@
 ﻿using AegisDocs.Core.Interfaces;
 using System.Diagnostics;
-using System.IO.Pipes;
-using System.Text;
 
 namespace AegisDocs.Core.Services;
 
@@ -9,33 +7,31 @@ public class LLamaAiService : ILocalAiService, IDisposable
 {
     private readonly IAiProcessManager _processManager;
     private readonly IIpcClient _ipcClient;
+    private readonly IPathProvider _pathProvider;
     private bool _isInitialized;
 
     public LLamaAiService(
         IAiProcessManager processManager,
-        IIpcClient ipcClient)
+        IIpcClient ipcClient,
+        IPathProvider pathProvider)
     {
         _processManager = processManager;
         _ipcClient = ipcClient;
+        _pathProvider = pathProvider;
     }
 
-    public async Task InitializeAsync(string modelPath)
+    public async Task InitializeAsync(string _)
     {
         if (_isInitialized) return;
 
-        string serverExeName = "AegisDocs.AiServer";
-        string serverExePath = @"D:\AegisDocsProject\AegisDocs\AegisDocs.AiServer\bin\Debug\net8.0\AegisDocs.AiServer.exe";
-
-        if (!File.Exists(serverExePath))
-            throw new FileNotFoundException($"Сервер не найден: {serverExePath}");
-
         Debug.WriteLine("[LLamaAiService] Инициализация...");
 
-        // 1. Делегируем работу с процессами
-        _processManager.KillOldProcesses(serverExeName);
-        _processManager.StartProcess(serverExePath);
+        string serverExePath = _pathProvider.GetAiServerExePath();
+        string modelPath = _pathProvider.GetModelPath();
 
-        // 2. Делегируем работу с сетью
+        _processManager.KillOldProcesses("AegisDocs.AiServer");
+        _processManager.StartProcess(serverExePath, modelPath);
+
         await _ipcClient.ConnectAsync("AegisAiPipe", 60000);
 
         _isInitialized = true;

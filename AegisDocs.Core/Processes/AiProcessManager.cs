@@ -16,12 +16,17 @@ public class AiProcessManager : IAiProcessManager
         }
     }
 
-    public void StartProcess(string exePath)
+    public void StartProcess(string exePath, string modelPath)
     {
         Debug.WriteLine("[ProcessManager] Запуск нового сервера...");
         _currentProcess = new Process
         {
-            StartInfo = new ProcessStartInfo { FileName = exePath, UseShellExecute = true }
+            StartInfo = new ProcessStartInfo 
+            { 
+                FileName = exePath,
+                Arguments = $"\"{modelPath}\"",
+                UseShellExecute = true 
+            }
         };
         _currentProcess.Start();
     }
