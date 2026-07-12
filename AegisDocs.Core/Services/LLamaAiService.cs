@@ -1,5 +1,7 @@
-﻿using AegisDocs.Core.Interfaces;
+﻿using AegisDocs.Core.DTOs;
+using AegisDocs.Core.Interfaces;
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace AegisDocs.Core.Services;
 
@@ -42,9 +44,23 @@ public class LLamaAiService : ILocalAiService, IDisposable
     {
         if (!_isInitialized) throw new InvalidOperationException("ИИ-сервер не запущен!");
 
-        string formattedMessage = PrepareMessageToSend(systemPrompt, userText);
+        var requestObj = new AiRequestDto(systemPrompt, userText);
+        string jsonRequest = JsonSerializer.Serialize(requestObj);
+        string jsonResponse = await _ipcClient.SendAndReceiveAsync(jsonRequest, cancellationToken);
 
-        return await _ipcClient.SendAndReceiveAsync(formattedMessage, cancellationToken);
+        try
+        {
+            var responseObj = JsonSerializer.Deserialize<AiResponseDto>(jsonResponse);
+
+            if (responseObj != null && responseObj.IsSuccess)
+                return responseObj.Answer;
+
+            return $"Ошибка ИИ: {responseObj?.ErrorMessage ?? "Неизвестная ошибка"}";
+        }
+        catch (JsonException ex)
+        {
+            return $"Ошибка расшифровки ответа сервера: {ex.Message}\nСырой ответ: {jsonResponse}";
+        }
     }
 
     public void Dispose()
@@ -55,11 +71,5 @@ public class LLamaAiService : ILocalAiService, IDisposable
             _ipcClient.Dispose();
             _processManager.StopProcess();
         }
-    }
-
-    private string PrepareMessageToSend(string systemPrompt, string userText)
-    {
-        string combinedText = $"{systemPrompt} Текст договора: {userText}";
-        return combinedText.Replace("\n", " ").Replace("\r", " ");
     }
 }
