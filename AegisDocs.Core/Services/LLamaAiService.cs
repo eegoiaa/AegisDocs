@@ -1,6 +1,7 @@
 ﻿using AegisDocs.Core.DTOs;
 using AegisDocs.Core.Interfaces;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace AegisDocs.Core.Services;

@@ -1,6 +1,5 @@
 ﻿using LLama;
 using LLama.Common;
-using LLama.Sampling;
 using System.Runtime.CompilerServices;
 
 namespace AegisDocs.AiServer;
@@ -30,24 +29,7 @@ public class LlamaEngine : IDisposable
 
         // Пока оставляем зашитый промпт тут, раз систему промптов отложили на потом
         string prompt = textToAnalyze;
-        var inferenceParams = new InferenceParams
-        {
-            MaxTokens = 1500,
-            AntiPrompts = new List<string>
-            {
-                "Твой ответ:",
-                "Текст документа:",
-                "Текст документа содержит",
-                "Ответ:",
-                "User:",
-                "Assistant:"
-            },
-            SamplingPipeline = new DefaultSamplingPipeline
-            {
-                Temperature = 0.1f,    
-                RepeatPenalty = 1.2f  
-            }
-        };
+        var inferenceParams = new InferenceParams { MaxTokens = 1500 };
 
         await foreach (var token in _executor.InferAsync(prompt, inferenceParams, cancellationToken))
         {
