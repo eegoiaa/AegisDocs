@@ -72,6 +72,20 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var aiResponse = await _aiService.AnalyzeTextAsync(systemPrompt, fullText, CancellationToken.None);
 
+            int startIndex = aiResponse.IndexOf('[');
+            int endIndex = aiResponse.LastIndexOf(']');
+
+            if (startIndex != -1 && endIndex != -1 && endIndex > startIndex)
+            {
+                string cleanJson = aiResponse.Substring(startIndex, endIndex - startIndex + 1);
+
+                ExtractedText = $"=== ИДЕАЛЬНЫЙ JSON ===\n\n{cleanJson}";
+            }
+            else
+            {
+                ExtractedText = $"Ошибка: ИИ не вернул корректный JSON.\n\nСырой ответ:\n{aiResponse}";
+            }
+
             ExtractedText = $"=== ОТВЕТ ИИ ===\n\n{aiResponse}";
         }
         catch (Exception ex)
