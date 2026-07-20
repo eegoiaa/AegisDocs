@@ -1,4 +1,5 @@
-﻿using AegisDocs.Core.Interfaces;
+﻿using AegisDocs.Core.DTOs;
+using AegisDocs.Core.Interfaces;
 using AegisDocs.Core.Services;
 using AegisDocs.UI.Interfaces;
 using AegisDocs.UI.Models;
@@ -6,7 +7,9 @@ using AegisDocs.UI.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -25,6 +28,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private PromptTemplate? _selectedTemplate;
+
+    [ObservableProperty]
+    private bool _isReportReady;
+
+    private List<CorrectionItem>? _currentErrors;
 
     public MainWindowViewModel() 
     {
@@ -54,6 +62,9 @@ public partial class MainWindowViewModel : ViewModelBase
         var filePath = await _filePickerService.PickFileAsync();
         if (string.IsNullOrEmpty(filePath)) return;
 
+        IsReportReady = false;
+        _currentErrors = null;
+
         try
         {
             ExtractedText = "1. Читаем файл...";
@@ -73,24 +84,77 @@ public partial class MainWindowViewModel : ViewModelBase
             var aiResponse = await _aiService.AnalyzeTextAsync(systemPrompt, fullText, CancellationToken.None);
 
             int startIndex = aiResponse.IndexOf('[');
-            int endIndex = aiResponse.LastIndexOf(']');
+            int endIndex = -1;
+
+            if (startIndex != -1)
+            {
+                int openBrackets = 0;
+                for (int i = startIndex; i < aiResponse.Length; i++)
+                {
+                    if (aiResponse[i] == '[') openBrackets++;
+                    else if (aiResponse[i] == ']') openBrackets--;
+
+                    if (openBrackets == 0)
+                    {
+                        endIndex = i;
+                        break;
+                    }
+                }
+            }
 
             if (startIndex != -1 && endIndex != -1 && endIndex > startIndex)
             {
                 string cleanJson = aiResponse.Substring(startIndex, endIndex - startIndex + 1);
 
-                ExtractedText = $"=== ИДЕАЛЬНЫЙ JSON ===\n\n{cleanJson}";
+                try
+                {
+                    _currentErrors = JsonSerializer.Deserialize<List<CorrectionItem>>(cleanJson);
+
+                    if (_currentErrors != null && _currentErrors.Count > 0)
+                    {
+                        ExtractedText = $"=== АНАЛИЗ ЗАВЕРШЕН ===\n\nНайдено ошибок: {_currentErrors.Count}.\nНажмите кнопку «Выгрузить отчет», чтобы получить Word-файл.";
+
+                        // Показываем кнопку скачивания!
+                        IsReportReady = true;
+                    }
+                    else
+                    {
+                        ExtractedText = "Ошибок не найдено. Договор чист!";
+                    }
+                }
+                catch (JsonException jsonEx)
+                {
+                    ExtractedText = $"Ошибка чтения JSON:\n{jsonEx.Message}";
+                }
             }
             else
             {
                 ExtractedText = $"Ошибка: ИИ не вернул корректный JSON.\n\nСырой ответ:\n{aiResponse}";
             }
-
-            ExtractedText = $"=== ОТВЕТ ИИ ===\n\n{aiResponse}";
         }
         catch (Exception ex)
         {
-            ExtractedText = $"Критическая ошибка:\n{ex.Message}\n\nСтек:\n{ex.StackTrace}";
+            ExtractedText = $"Критическая ошибка:\n{ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void ExportReport()
+    {
+        if (_documentService == null || _currentErrors == null || _currentErrors.Count == 0) return;
+
+        try
+        {
+            string reportPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Aegis_Report.docx");
+
+            _documentService.GenerateAuditReport(reportPath, _currentErrors);
+
+            ExtractedText += $"\n\n[УСПЕХ] Отчет сохранен на Рабочий стол:\n{reportPath}";
+
+        }
+        catch (Exception ex)
+        {
+            ExtractedText += $"\n\n[ОШИБКА СОХРАНЕНИЯ]\n{ex.Message}";
         }
     }
 }
