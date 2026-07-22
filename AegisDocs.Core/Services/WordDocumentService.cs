@@ -42,7 +42,7 @@ public class WordDocumentService : IDocumentService
         return stringBuilder.ToString().Trim();
     }
 
-    public void GenerateAuditReport(string outputPath, List<CorrectionItem> errors)
+    public void GenerateAuditReport(string outputPath, List<CorrectionItem> errors, string originalFileName, string auditModeName)
     {
         using (WordprocessingDocument wordDocument = WordprocessingDocument.Create(outputPath, WordprocessingDocumentType.Document))
         {
@@ -50,42 +50,46 @@ public class WordDocumentService : IDocumentService
             mainPart.Document = new Document();
             Body body = mainPart.Document.AppendChild(new Body());
 
-            Paragraph title = new Paragraph(new Run(new Text("Отчет об аудите договора")))
-            {
-                ParagraphProperties = new ParagraphProperties(
-                    new Justification() { Val = JustificationValues.Center })
-            };
-            body.AppendChild(title);
-            body.AppendChild(new Paragraph(new Run(new Text($"Найдено ошибок: {errors.Count}"))));
-            body.AppendChild(new Paragraph()); 
+            Run titleRun = new Run(new Text($"Отчет: {auditModeName}"));
+            titleRun.RunProperties = new RunProperties(new Bold(), new FontSize() { Val = "32" }, new RunFonts() { Ascii = "Arial" });
+            body.AppendChild(new Paragraph(titleRun) { ParagraphProperties = new ParagraphProperties(new Justification() { Val = JustificationValues.Center }) });
+
+            body.AppendChild(new Paragraph());
+
+            AppendMetadataLine(body, "Проверенный файл:", originalFileName);
+            AppendMetadataLine(body, "Дата проверки:", DateTime.Now.ToString("dd.MM.yyyy HH:mm"));
+            AppendMetadataLine(body, "Найдено ошибок:", errors.Count.ToString(), true); 
 
             Table table = new Table();
 
             TableProperties tblProp = new TableProperties(
                 new TableBorders(
-                    new TopBorder() { Val = new EnumValue<BorderValues>(BorderValues.Single), Size = 12 },
-                    new BottomBorder() { Val = new EnumValue<BorderValues>(BorderValues.Single), Size = 12 },
-                    new LeftBorder() { Val = new EnumValue<BorderValues>(BorderValues.Single), Size = 12 },
-                    new RightBorder() { Val = new EnumValue<BorderValues>(BorderValues.Single), Size = 12 },
-                    new InsideHorizontalBorder() { Val = new EnumValue<BorderValues>(BorderValues.Single), Size = 12 },
-                    new InsideVerticalBorder() { Val = new EnumValue<BorderValues>(BorderValues.Single), Size = 12 }
-                )
+                    new TopBorder() { Val = BorderValues.Single, Size = 4 },
+                    new BottomBorder() { Val = BorderValues.Single, Size = 4 },
+                    new LeftBorder() { Val = BorderValues.Single, Size = 4 },
+                    new RightBorder() { Val = BorderValues.Single, Size = 4 },
+                    new InsideHorizontalBorder() { Val = BorderValues.Single, Size = 4 },
+                    new InsideVerticalBorder() { Val = BorderValues.Single, Size = 4 }
+                ),
+                new TableWidth() { Width = "5000", Type = TableWidthUnitValues.Pct } 
             );
             table.AppendChild(tblProp);
 
+            // Шапка таблицы (Серый фон)
             TableRow headerRow = new TableRow();
-            headerRow.Append(CreateCell("Категория", true));
-            headerRow.Append(CreateCell("Как было (Ошибка)", true));
-            headerRow.Append(CreateCell("Как надо (Исправление)", true));
-            headerRow.Append(CreateCell("Обоснование ИИ", true));
+            headerRow.Append(CreateCell("Категория", true, "EFEFEF"));
+            headerRow.Append(CreateCell("Как было (Ошибка)", true, "EFEFEF"));
+            headerRow.Append(CreateCell("Как надо (Исправление)", true, "EFEFEF"));
+            headerRow.Append(CreateCell("Обоснование ИИ", true, "EFEFEF"));
             table.AppendChild(headerRow);
 
+            // Данные с цветовой индикацией
             foreach (var error in errors)
             {
                 TableRow dataRow = new TableRow();
                 dataRow.Append(CreateCell(error.Category));
-                dataRow.Append(CreateCell(error.OriginalText));
-                dataRow.Append(CreateCell(error.CorrectedText));
+                dataRow.Append(CreateCell(error.OriginalText, false, "FFEBEB")); 
+                dataRow.Append(CreateCell(error.CorrectedText, false, "E8F5E9")); 
                 dataRow.Append(CreateCell(error.Reason));
                 table.AppendChild(dataRow);
             }
@@ -95,15 +99,63 @@ public class WordDocumentService : IDocumentService
         }
     }
 
-    private TableCell CreateCell(string text, bool isHeader = false)
+    private TableCell CreateCell(string text, bool isHeader = false, string? bgColorHex = null)
     {
         TableCell cell = new TableCell();
+
+        TableCellProperties tcp = new TableCellProperties();
+        tcp.Append(new TableCellMargin(
+            new TopMargin() { Width = "100", Type = TableWidthUnitValues.Dxa },
+            new BottomMargin() { Width = "100", Type = TableWidthUnitValues.Dxa },
+            new LeftMargin() { Width = "100", Type = TableWidthUnitValues.Dxa },
+            new RightMargin() { Width = "100", Type = TableWidthUnitValues.Dxa }
+        ));
+
+        if (!string.IsNullOrEmpty(bgColorHex))
+        {
+            tcp.Append(new Shading() { Val = ShadingPatternValues.Clear, Color = "auto", Fill = bgColorHex });
+        }
+        cell.Append(tcp);
+
         Run run = new Run(new Text(text ?? string.Empty));
+        RunProperties rPr = new RunProperties(
+            new RunFonts() { Ascii = "Arial", HighAnsi = "Arial", ComplexScript = "Arial" },
+            new FontSize() { Val = "22" } 
+        );
+        if (isHeader) rPr.Append(new Bold());
+        run.RunProperties = rPr;
 
+        Paragraph p = new Paragraph(run);
         if (isHeader)
-            run.RunProperties = new RunProperties(new Bold());
+        {
+            p.ParagraphProperties = new ParagraphProperties(new Justification() { Val = JustificationValues.Center });
+        }
 
-        cell.Append(new Paragraph(run));
+        cell.Append(p);
         return cell;
+    }
+
+    private void AppendMetadataLine(Body docBody, string boldLabel, string normalText, bool addBottomSpacing = false)
+    {
+        Paragraph p = new Paragraph();
+
+        Text boldText = new Text(boldLabel + " ");
+        boldText.Space = DocumentFormat.OpenXml.SpaceProcessingModeValues.Preserve;
+
+        Run boldRun = new Run(boldText);
+        boldRun.RunProperties = new RunProperties(new Bold(), new FontSize() { Val = "24" }, new RunFonts() { Ascii = "Arial" });
+
+        Run normalRun = new Run(new Text(normalText));
+        normalRun.RunProperties = new RunProperties(new FontSize() { Val = "24" }, new RunFonts() { Ascii = "Arial" });
+
+        p.AppendChild(boldRun);
+        p.AppendChild(normalRun);
+
+        if (addBottomSpacing)
+        {
+            p.ParagraphProperties = new ParagraphProperties(new SpacingBetweenLines() { After = "400" });
+        }
+
+        docBody.AppendChild(p);
     }
 }

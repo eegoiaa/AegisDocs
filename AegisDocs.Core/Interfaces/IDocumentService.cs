@@ -5,5 +5,5 @@ namespace AegisDocs.Core.Services;
 public interface IDocumentService
 {
     string ExtractText(string filePath);
-    void GenerateAuditReport(string outputPath, List<CorrectionItem> errors);
+    void GenerateAuditReport(string outputPath, List<CorrectionItem> errors, string originalFileName, string auditModeName);
 }

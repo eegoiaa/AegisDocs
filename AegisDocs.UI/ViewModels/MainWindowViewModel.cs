@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,6 +34,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _isReportReady;
 
     private List<CorrectionItem>? _currentErrors;
+    private string _lastAnalyzedFileName = string.Empty;
+    private string _lastAuditMode = string.Empty;
 
     public MainWindowViewModel() 
     {
@@ -60,6 +63,9 @@ public partial class MainWindowViewModel : ViewModelBase
         if (_documentService == null || _filePickerService == null || _aiService == null) return;
 
         var filePath = await _filePickerService.PickFileAsync();
+        _lastAnalyzedFileName = System.IO.Path.GetFileName(filePath);
+        _lastAuditMode = SelectedTemplate?.Name ?? "Общая проверка";
+
         if (string.IsNullOrEmpty(filePath)) return;
 
         IsReportReady = false;
@@ -108,13 +114,18 @@ public partial class MainWindowViewModel : ViewModelBase
 
                 try
                 {
-                    _currentErrors = JsonSerializer.Deserialize<List<CorrectionItem>>(cleanJson);
+                    var parsedErrors = JsonSerializer.Deserialize<List<CorrectionItem>>(cleanJson);
+                    //_currentErrors = JsonSerializer.Deserialize<List<CorrectionItem>>(cleanJson);
 
-                    if (_currentErrors != null && _currentErrors.Count > 0)
+                    if (parsedErrors != null && parsedErrors.Count > 0)
                     {
+                        _currentErrors = parsedErrors
+                            .GroupBy(e => e.OriginalText)
+                            .Select(group => group.First())
+                            .ToList();
+
                         ExtractedText = $"=== АНАЛИЗ ЗАВЕРШЕН ===\n\nНайдено ошибок: {_currentErrors.Count}.\nНажмите кнопку «Выгрузить отчет», чтобы получить Word-файл.";
 
-                        // Показываем кнопку скачивания!
                         IsReportReady = true;
                     }
                     else
@@ -145,12 +156,19 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            string reportPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Aegis_Report.docx");
+            string safeFileName = System.IO.Path.GetFileNameWithoutExtension(_lastAnalyzedFileName);
 
-            _documentService.GenerateAuditReport(reportPath, _currentErrors);
+            string safeMode = _lastAuditMode.Replace(" ", "");
 
-            ExtractedText += $"\n\n[УСПЕХ] Отчет сохранен на Рабочий стол:\n{reportPath}";
+            string timeStamp = DateTime.Now.ToString("HH-mm-ss");
 
+            string outputFileName = $"Отчет_{safeMode}_{safeFileName}_{timeStamp}.docx";
+
+            string reportPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), outputFileName);
+
+            _documentService.GenerateAuditReport(reportPath, _currentErrors, _lastAnalyzedFileName, _lastAuditMode);
+
+            ExtractedText += $"\n\n[УСПЕХ] Отчет сохранен на Рабочий стол:\n{outputFileName}";
         }
         catch (Exception ex)
         {
