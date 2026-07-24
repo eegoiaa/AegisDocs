@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddTransient<IAiProcessManager, AiProcessManager>();
         services.AddTransient<IIpcClient, NamedPipeClient>();
         services.AddTransient<IPathProvider, PathProvider>();
+        services.AddTransient<IAiResponseParser, AiResponseParserService>();
 
         return services;
     }
