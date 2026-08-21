@@ -75,7 +75,6 @@ public class WordDocumentService : IDocumentService
             );
             table.AppendChild(tblProp);
 
-            // Шапка таблицы (Серый фон)
             TableRow headerRow = new TableRow();
             headerRow.Append(CreateCell("Категория", true, "EFEFEF"));
             headerRow.Append(CreateCell("Как было (Ошибка)", true, "EFEFEF"));
@@ -83,7 +82,6 @@ public class WordDocumentService : IDocumentService
             headerRow.Append(CreateCell("Обоснование ИИ", true, "EFEFEF"));
             table.AppendChild(headerRow);
 
-            // Данные с цветовой индикацией
             foreach (var error in errors)
             {
                 TableRow dataRow = new TableRow();
@@ -96,6 +94,37 @@ public class WordDocumentService : IDocumentService
 
             body.AppendChild(table);
             mainPart.Document.Save();
+        }
+    }
+
+    public void ApplyCorrections(string originalFilePath, string outputFilePath, List<CorrectionItem> corrections)
+    {
+        if (string.IsNullOrWhiteSpace(originalFilePath) || !File.Exists(originalFilePath))
+            throw new FileNotFoundException("Исходный файл не найден", originalFilePath);
+
+        File.Copy(originalFilePath, outputFilePath, true);
+
+        using (WordprocessingDocument wordDoc = WordprocessingDocument.Open(outputFilePath, true))
+        {
+            var body = wordDoc.MainDocumentPart?.Document.Body;
+            if (body == null) return;
+
+            var paragraphs = body.Descendants<Paragraph>().ToList();
+
+            foreach (var correction in corrections)
+            {
+                string search = CleanText(correction.OriginalText);
+                string replace = CleanText(correction.CorrectedText);
+
+                if (string.IsNullOrWhiteSpace(search)) continue;
+
+                foreach (var paragraph in paragraphs)
+                {
+                    ApplyCorrectionToParagraph(paragraph, search, replace);
+                }
+            }
+
+            wordDoc.MainDocumentPart.Document.Save();
         }
     }
 
@@ -158,4 +187,133 @@ public class WordDocumentService : IDocumentService
 
         docBody.AppendChild(p);
     }
+
+    private void ReplaceInTextElements(List<Text> textNodes, string search, string replace)
+    {
+        while (true)
+        {
+            string fullText = string.Join("", textNodes.Select(t => t.Text));
+            int index = fullText.IndexOf(search, StringComparison.Ordinal);
+
+            if (index < 0) break;
+
+            int currentPosition = 0;
+            bool isReplaced = false;
+
+            foreach (var textNode in textNodes)
+            {
+                int nodeLength = textNode.Text.Length;
+
+                if (currentPosition + nodeLength > index && currentPosition < index + search.Length)
+                {
+                    if (!isReplaced)
+                    {
+                        int prefixLength = Math.Max(0, index - currentPosition);
+                        string prefix = textNode.Text.Substring(0, prefixLength);
+
+                        int suffixStartIndex = (index + search.Length) - currentPosition;
+                        string suffix = suffixStartIndex < nodeLength ? textNode.Text.Substring(suffixStartIndex) : "";
+
+                        textNode.Text = prefix + replace + suffix;
+                        PreserveSpaces(textNode);
+                        isReplaced = true;
+                    }
+                    else
+                    {
+                        
+                        int suffixStartIndex = (index + search.Length) - currentPosition;
+                        if (suffixStartIndex < nodeLength)
+                        {
+                            textNode.Text = textNode.Text.Substring(suffixStartIndex);
+                        }
+                        else
+                        {
+                            textNode.Text = string.Empty; 
+                        }
+                        PreserveSpaces(textNode);
+                    }
+                }
+                currentPosition += nodeLength;
+            }
+        }
+    }
+
+    private void PreserveSpaces(Text textNode)
+    {
+        if (textNode.Text.StartsWith(" ") || textNode.Text.EndsWith(" "))
+        {
+            textNode.Space = DocumentFormat.OpenXml.SpaceProcessingModeValues.Preserve;
+        }
+    }
+
+    private void ApplyCorrectionToParagraph(Paragraph paragraph, string search, string replace)
+    {
+        var textNodes = paragraph.Descendants<Text>().ToList();
+        if (textNodes.Count == 0) return;
+
+        string paragraphText = string.Join("", textNodes.Select(t => t.Text));
+
+        int matchIndex = paragraphText.IndexOf(search, StringComparison.OrdinalIgnoreCase);
+        if (matchIndex < 0)
+        {
+            string normalizedParagraph = NormalizeSpaces(paragraphText);
+            string normalizedSearch = NormalizeSpaces(search);
+            matchIndex = normalizedParagraph.IndexOf(normalizedSearch, StringComparison.OrdinalIgnoreCase);
+            if (matchIndex < 0) return;
+        }
+
+        int currentPos = 0;
+        bool isReplaced = false;
+
+        foreach (var textNode in textNodes)
+        {
+            int nodeLen = textNode.Text.Length;
+
+            if (currentPos + nodeLen > matchIndex && currentPos < matchIndex + search.Length)
+            {
+                if (!isReplaced)
+                {
+                    int prefixLen = Math.Max(0, matchIndex - currentPos);
+                    string prefix = textNode.Text.Substring(0, prefixLen);
+
+                    int suffixStart = (matchIndex + search.Length) - currentPos;
+                    string suffix = suffixStart < nodeLen ? textNode.Text.Substring(suffixStart) : string.Empty;
+
+                    textNode.Text = prefix + replace + suffix;
+                    PreserveSpaces(textNode);
+                    isReplaced = true;
+                }
+                else
+                {
+                    int suffixStart = (matchIndex + search.Length) - currentPos;
+                    textNode.Text = suffixStart < nodeLen ? textNode.Text.Substring(suffixStart) : string.Empty;
+                    PreserveSpaces(textNode);
+                }
+            }
+
+            currentPos += nodeLen;
+        }
+    }
+
+    private string CleanText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        string trimmed = text.Trim();
+
+        if ((trimmed.StartsWith("\"") && trimmed.EndsWith("\"")) ||
+            (trimmed.StartsWith("«") && trimmed.EndsWith("»")))
+        {
+            if (trimmed.Length >= 2)
+                trimmed = trimmed.Substring(1, trimmed.Length - 2).Trim();
+        }
+
+        return trimmed.Replace('\u00A0', ' ');
+    }
+
+    private string NormalizeSpaces(string text)
+    {
+        return string.Join(" ", text.Split(new[] { ' ', '\u00A0', '\t' }, StringSplitOptions.RemoveEmptyEntries));
+    }
+
 }

@@ -41,6 +41,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private List<CorrectionItem>? _currentErrors;
     private string _lastAnalyzedFileName = string.Empty;
+    private string _lastAnalyzedFilePath = string.Empty;
     private string _lastAuditMode = string.Empty;
 
     #endregion
@@ -77,6 +78,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (string.IsNullOrEmpty(filePath)) return;
 
+        _lastAnalyzedFilePath = filePath;
         _lastAnalyzedFileName = System.IO.Path.GetFileName(filePath);
         _lastAuditMode = SelectedTemplate?.Name ?? "Общая проверка";
         IsReportReady = false;
@@ -138,6 +140,30 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             ExtractedText += $"\n\n[ОШИБКА СОХРАНЕНИЯ]\n{ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void GenerateCorrectedDocument()
+    {
+        if (_documentService == null || _currentErrors == null || _currentErrors.Count == 0 || string.IsNullOrEmpty(_lastAnalyzedFilePath))
+            return;
+
+        try
+        {
+            string safeFileName = System.IO.Path.GetFileNameWithoutExtension(_lastAnalyzedFileName);
+            string timeStamp = DateTime.Now.ToString("HH-mm-ss");
+            string outputFileName = $"{safeFileName}_Исправлен_{timeStamp}.docx";
+
+            string outputPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), outputFileName);
+
+            _documentService.ApplyCorrections(_lastAnalyzedFilePath, outputPath, _currentErrors);
+
+            ExtractedText += $"\n\nИсправленный договор сохранен на Рабочий стол:\n{outputFileName}";
+        }
+        catch (Exception ex)
+        {
+            ExtractedText += $"\n\n[ОШИБКА АВТОЗАМЕНЫ]\n{ex.Message}";
         }
     }
 }

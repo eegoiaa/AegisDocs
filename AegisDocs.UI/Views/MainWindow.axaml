@@ -36,10 +36,20 @@
                     Command="{Binding ExportReportCommand}" 
                     IsVisible="{Binding IsReportReady}" 
                     Padding="15, 10"
-                    Background="#4CAF50" 
+                    Background="#2196F3" 
                     Foreground="White"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Center"/>
+
+            <Button Content="Применить исправления к файлу"
+                    Command="{Binding GenerateCorrectedDocumentCommand}"
+                    IsVisible="{Binding IsReportReady}" 
+                    Padding="15,10"
+                    Background="#4CAF50" 
+                    Foreground="White"
+                    FontWeight="Bold"
+                    CornerRadius="5"/>
+
         </StackPanel>
         
         <ScrollViewer Grid.Row="2" Margin="10, 0, 10, 10">
