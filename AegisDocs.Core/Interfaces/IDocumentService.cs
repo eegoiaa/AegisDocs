@@ -6,4 +6,5 @@ public interface IDocumentService
 {
     string ExtractText(string filePath);
     void GenerateAuditReport(string outputPath, List<CorrectionItem> errors, string originalFileName, string auditModeName);
+    void ApplyCorrections(string originalFilePath, string outputFilePath, List<CorrectionItem> corrections);
 }
