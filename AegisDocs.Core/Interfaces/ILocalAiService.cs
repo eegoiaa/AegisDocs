@@ -10,5 +10,5 @@ public interface ILocalAiService : IDisposable
     /// <summary>
     /// Анализирует кусок текста и возвращает результат.
     /// </summary>
-    Task<string> AnalyzeTextAsync(string systemPrompt, string userText, CancellationToken cancellationToken);
+    Task<string> AnalyzeTextAsync(string systemPrompt, string userText, CancellationToken cancellationToken = default);
 }

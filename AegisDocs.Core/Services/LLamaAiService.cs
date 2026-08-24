@@ -23,11 +23,11 @@ public class LLamaAiService : ILocalAiService, IDisposable
         _pathProvider = pathProvider;
     }
 
-    public async Task InitializeAsync(string _)
+    public Task InitializeAsync(string _)
     {
-        if (_isInitialized) return;
+        if (_isInitialized) return Task.CompletedTask;
 
-        Debug.WriteLine("[LLamaAiService] Инициализация...");
+        Debug.WriteLine("[LLamaAiService] Запуск сервера ИИ...");
 
         string serverExePath = _pathProvider.GetAiServerExePath();
         string modelPath = _pathProvider.GetModelPath();
@@ -35,18 +35,20 @@ public class LLamaAiService : ILocalAiService, IDisposable
         _processManager.KillOldProcesses("AegisDocs.AiServer");
         _processManager.StartProcess(serverExePath, modelPath);
 
-        await _ipcClient.ConnectAsync("AegisAiPipe", 60000);
-
         _isInitialized = true;
-        Debug.WriteLine("[LLamaAiService] Инициализация успешна!");
+        Debug.WriteLine("[LLamaAiService] Сервер ИИ успешно запущен!");
+
+        return Task.CompletedTask;
     }
 
-    public async Task<string> AnalyzeTextAsync(string systemPrompt, string userText, CancellationToken cancellationToken)
+    public async Task<string> AnalyzeTextAsync(string systemPrompt, string userText, CancellationToken cancellationToken = default)
     {
-        if (!_isInitialized) throw new InvalidOperationException("ИИ-сервер не запущен!");
+        if (!_isInitialized)
+            throw new InvalidOperationException("ИИ-сервер не запущен!");
 
         var requestObj = new AiRequestDto(systemPrompt, userText);
         string jsonRequest = JsonSerializer.Serialize(requestObj);
+
         string jsonResponse = await _ipcClient.SendAndReceiveAsync(jsonRequest, cancellationToken);
 
         try
@@ -56,11 +58,11 @@ public class LLamaAiService : ILocalAiService, IDisposable
             if (responseObj != null && responseObj.IsSuccess)
                 return responseObj.Answer;
 
-            return $"Ошибка ИИ: {responseObj?.ErrorMessage ?? "Неизвестная ошибка"}";
+            throw new InvalidOperationException(responseObj?.ErrorMessage ?? "Неизвестная ошибка сервера ИИ");
         }
         catch (JsonException ex)
         {
-            return $"Ошибка расшифровки ответа сервера: {ex.Message}\nСырой ответ: {jsonResponse}";
+            throw new InvalidOperationException($"Ошибка расшифровки ответа сервера: {ex.Message}\nСырой ответ: {jsonResponse}", ex);
         }
     }
 
@@ -68,9 +70,8 @@ public class LLamaAiService : ILocalAiService, IDisposable
     {
         if (_isInitialized)
         {
-            _ipcClient.SendDisconnectSignal();
-            _ipcClient.Dispose();
             _processManager.StopProcess();
+            _isInitialized = false;
         }
     }
 }

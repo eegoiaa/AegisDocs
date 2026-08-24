@@ -10,6 +10,7 @@ public record AiResponseDto(string Answer, bool IsSuccess, string ErrorMessage);
 public class IpcServer
 {
     private readonly LlamaEngine _engine;
+    private const string PipeName = "AegisAiPipe";
 
     public IpcServer(LlamaEngine engine)
     {
@@ -20,51 +21,57 @@ public class IpcServer
     {
         Console.WriteLine("Ожидание подключения интерфейса Avalonia...");
 
-        using var pipeServer = new NamedPipeServerStream("AegisAiPipe", PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-        await pipeServer.WaitForConnectionAsync();
-        Console.WriteLine("=== Интерфейс подключен! ===");
-
-        using var reader = new StreamReader(pipeServer, new UTF8Encoding(false));
-        using var writer = new StreamWriter(pipeServer, new UTF8Encoding(false)) { AutoFlush = true };
-
         while (true)
         {
-            string? rawJsonLine = await reader.ReadLineAsync();
-
-            if (string.IsNullOrEmpty(rawJsonLine)) continue;
-            if (rawJsonLine == "EXIT") break;
-
-            AiResponseDto responseObj;
             try
             {
+                using var pipeServer = new NamedPipeServerStream(
+                    PipeName,
+                    PipeDirection.InOut,
+                    NamedPipeServerStream.MaxAllowedServerInstances,
+                    PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous);
+
+                await pipeServer.WaitForConnectionAsync();
+                Console.WriteLine("\n[IPC] Клиент подключился. Обработка запроса...");
+
+                using var reader = new StreamReader(pipeServer, new UTF8Encoding(false));
+                using var writer = new StreamWriter(pipeServer, new UTF8Encoding(false)) { AutoFlush = true };
+
+                string? rawJsonLine = await reader.ReadLineAsync();
+
+                if (string.IsNullOrEmpty(rawJsonLine) || rawJsonLine == "EXIT")
+                {
+                    pipeServer.Disconnect();
+                    continue;
+                }
+
                 var request = JsonSerializer.Deserialize<AiRequestDto>(rawJsonLine);
-                if (request == null) throw new Exception("Пришел пустой JSON");
+                if (request == null) throw new Exception("Пустой JSON-запрос");
 
-                Console.WriteLine("Получен текст. Анализирую...");
-
-                // Передаем параметры раздельно и получаем готовый ответ через await
+                Console.WriteLine("[IPC] Запуск генерации...");
                 string aiResult = await _engine.GenerateResponseAsync(
                     request.SystemPrompt,
                     request.DocumentText,
                     CancellationToken.None
                 );
 
-                Console.WriteLine(aiResult);
-                Console.WriteLine();
+                var responseObj = new AiResponseDto(aiResult, true, "");
+                string jsonResponse = JsonSerializer.Serialize(responseObj);
 
-                responseObj = new AiResponseDto(aiResult, true, "");
+                await writer.WriteLineAsync(jsonResponse);
+                await writer.FlushAsync();
+
+                Console.WriteLine("[IPC] Ответ успешно передан клиенту.");
+            }
+            catch (IOException)
+            {
+                Console.WriteLine("[IPC] Клиент отменил операцию и разорвал соединение.");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ОШИБКА ОБРАБОТКИ]: {ex.Message}");
-                responseObj = new AiResponseDto("", false, ex.Message);
+                Console.WriteLine($"[IPC ОШИБКА]: {ex.Message}");
             }
-
-            // Упаковываем ответ в JSON и отправляем ОДНОЙ строкой
-            string jsonResponse = JsonSerializer.Serialize(responseObj);
-            await writer.WriteLineAsync(jsonResponse);
-            await writer.FlushAsync();
-            Console.WriteLine("=== Ответ отправлен в UI ===");
         }
     }
 }
