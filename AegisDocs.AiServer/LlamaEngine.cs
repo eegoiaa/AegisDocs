@@ -1,7 +1,7 @@
 ﻿using LLama;
 using LLama.Common;
 using LLama.Sampling;
-using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace AegisDocs.AiServer;
 
@@ -11,8 +11,12 @@ public class LlamaEngine : IDisposable
     private LLamaContext? _context;
     private InteractiveExecutor? _executor;
 
+    public bool IsInitialized => _weights != null && _context != null && _executor != null;
+
     public void Initialize(string modelPath)
     {
+        if (IsInitialized) return;
+
         var parameters = new ModelParams(modelPath)
         {
             ContextSize = 4096,
@@ -24,35 +28,61 @@ public class LlamaEngine : IDisposable
         _executor = new InteractiveExecutor(_context);
     }
 
-    public async IAsyncEnumerable<string> GenerateResponseAsync(string textToAnalyze, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public async Task<string> GenerateResponseAsync(string systemPrompt, string userText, CancellationToken cancellationToken)
     {
-        if (_executor == null) throw new InvalidOperationException("Модель не инициализирована.");
+        if (!IsInitialized || _executor == null || _context == null)
+            throw new InvalidOperationException("LlamaEngine не инициализирован");
 
-        // Пока оставляем зашитый промпт тут, раз систему промптов отложили на потом
-        string prompt = textToAnalyze;
+        string formattedPrompt = $"<|system|>\n{systemPrompt}</s>\n<|user|>\n{userText}</s>\n<|assistant|>\n";
+
         var inferenceParams = new InferenceParams
         {
             MaxTokens = 1500,
-            AntiPrompts = new List<string>
-            {
-                "Твой ответ:",
-                "Текст документа:",
-                "Текст документа содержит",
-                "Ответ:",
-                "User:",
-                "Assistant:"
-            },
             SamplingPipeline = new DefaultSamplingPipeline
             {
-                Temperature = 0.1f,    
-                RepeatPenalty = 1.2f  
-            }
+                Temperature = 0.1f,
+                TopP = 0.9f,
+                RepeatPenalty = 1.15f
+            },
+            AntiPrompts = new[] { "</s>", "<|user|>", "<|system|>", "]\n\n", "] ]" }
         };
 
-        await foreach (var token in _executor.InferAsync(prompt, inferenceParams, cancellationToken))
+        var responseBuilder = new StringBuilder();
+
+        await foreach (var token in _executor.InferAsync(formattedPrompt, inferenceParams, cancellationToken))
         {
-            yield return token;
+            responseBuilder.Append(token);
+
+            string currentText = responseBuilder.ToString();
+
+            // Автоостановка генерации сразу после закрытия первого массива [ ... ]
+            if (IsCompleteJsonArray(currentText))
+            {
+                break;
+            }
         }
+
+        return responseBuilder.ToString().Trim();
+    }
+
+    private bool IsCompleteJsonArray(string text)
+    {
+        int startIndex = text.IndexOf('[');
+        if (startIndex == -1) return false;
+
+        int openBrackets = 0;
+        for (int i = startIndex; i < text.Length; i++)
+        {
+            if (text[i] == '[') openBrackets++;
+            else if (text[i] == ']') openBrackets--;
+
+            if (openBrackets == 0 && i > startIndex + 2)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public void Dispose()
