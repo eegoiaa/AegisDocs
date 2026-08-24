@@ -27,7 +27,7 @@ public class LLamaAiService : ILocalAiService, IDisposable
     {
         if (_isInitialized) return Task.CompletedTask;
 
-        Debug.WriteLine("[LLamaAiService] Запуск сервера ИИ...");
+        Debug.WriteLine("[LLamaAiService] Запуск процесса AiServer...");
 
         string serverExePath = _pathProvider.GetAiServerExePath();
         string modelPath = _pathProvider.GetModelPath();
@@ -36,7 +36,7 @@ public class LLamaAiService : ILocalAiService, IDisposable
         _processManager.StartProcess(serverExePath, modelPath);
 
         _isInitialized = true;
-        Debug.WriteLine("[LLamaAiService] Сервер ИИ успешно запущен!");
+        Debug.WriteLine("[LLamaAiService] Процесс AiServer запущен!");
 
         return Task.CompletedTask;
     }
@@ -62,8 +62,13 @@ public class LLamaAiService : ILocalAiService, IDisposable
         }
         catch (JsonException ex)
         {
-            throw new InvalidOperationException($"Ошибка расшифровки ответа сервера: {ex.Message}\nСырой ответ: {jsonResponse}", ex);
+            throw new InvalidOperationException($"Ошибка десериализации ответа: {ex.Message}\nОтвет: {jsonResponse}", ex);
         }
+    }
+
+    public async Task CancelCurrentTaskAsync()
+    {
+        await _ipcClient.SendCancelSignalAsync();
     }
 
     public void Dispose()

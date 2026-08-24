@@ -7,6 +7,8 @@ namespace AegisDocs.Core.Services.Docx;
 
 public class DocxCorrectionApplier
 {
+    private static readonly char[] TrimQuotes = new[] { '"', '«', '»', '\'', '“', '”', '`' };
+
     public void ApplyCorrections(string originalFilePath, string outputFilePath, List<CorrectionItem> corrections)
     {
         if (string.IsNullOrWhiteSpace(originalFilePath) || !File.Exists(originalFilePath))
@@ -23,10 +25,10 @@ public class DocxCorrectionApplier
 
             foreach (var correction in corrections)
             {
-                string search = CleanText(correction.OriginalText);
-                string replace = CleanText(correction.CorrectedText);
+                string search = CleanAndStripQuotes(correction.OriginalText);
+                string replace = CleanAndStripQuotes(correction.CorrectedText);
 
-                if (string.IsNullOrWhiteSpace(search)) continue;
+                if (string.IsNullOrWhiteSpace(search) || string.IsNullOrWhiteSpace(replace)) continue;
 
                 foreach (var paragraph in paragraphs)
                 {
@@ -45,13 +47,19 @@ public class DocxCorrectionApplier
 
         string paragraphText = string.Join("", textNodes.Select(t => t.Text));
 
+        // 1. Прямой поиск
         int matchIndex = paragraphText.IndexOf(search, StringComparison.OrdinalIgnoreCase);
+        int matchedLength = search.Length;
+
         if (matchIndex < 0)
         {
-            string normalizedParagraph = NormalizeSpaces(paragraphText);
-            string normalizedSearch = NormalizeSpaces(search);
-            matchIndex = normalizedParagraph.IndexOf(normalizedSearch, StringComparison.OrdinalIgnoreCase);
+            string normParagraph = NormalizePunctuationAndSpaces(paragraphText);
+            string normSearch = NormalizePunctuationAndSpaces(search);
+
+            matchIndex = normParagraph.IndexOf(normSearch, StringComparison.OrdinalIgnoreCase);
             if (matchIndex < 0) return;
+
+            matchedLength = Math.Min(search.Length, paragraphText.Length - matchIndex);
         }
 
         int currentPos = 0;
@@ -61,14 +69,14 @@ public class DocxCorrectionApplier
         {
             int nodeLen = textNode.Text.Length;
 
-            if (currentPos + nodeLen > matchIndex && currentPos < matchIndex + search.Length)
+            if (currentPos + nodeLen > matchIndex && currentPos < matchIndex + matchedLength)
             {
                 if (!isReplaced)
                 {
                     int prefixLen = Math.Max(0, matchIndex - currentPos);
                     string prefix = textNode.Text.Substring(0, prefixLen);
 
-                    int suffixStart = (matchIndex + search.Length) - currentPos;
+                    int suffixStart = (matchIndex + matchedLength) - currentPos;
                     string suffix = suffixStart < nodeLen ? textNode.Text.Substring(suffixStart) : string.Empty;
 
                     textNode.Text = prefix + replace + suffix;
@@ -77,7 +85,7 @@ public class DocxCorrectionApplier
                 }
                 else
                 {
-                    int suffixStart = (matchIndex + search.Length) - currentPos;
+                    int suffixStart = (matchIndex + matchedLength) - currentPos;
                     textNode.Text = suffixStart < nodeLen ? textNode.Text.Substring(suffixStart) : string.Empty;
                     PreserveSpaces(textNode);
                 }
@@ -87,25 +95,29 @@ public class DocxCorrectionApplier
         }
     }
 
-    private string CleanText(string? text)
+    private string CleanAndStripQuotes(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
         string trimmed = text.Trim();
 
-        if ((trimmed.StartsWith("\"") && trimmed.EndsWith("\"")) ||
-            (trimmed.StartsWith("«") && trimmed.EndsWith("»")))
-        {
-            if (trimmed.Length >= 2)
-                trimmed = trimmed.Substring(1, trimmed.Length - 2).Trim();
-        }
+        trimmed = trimmed.Trim(TrimQuotes).Trim();
 
         return trimmed.Replace('\u00A0', ' ');
     }
 
-    private string NormalizeSpaces(string text)
+    private string NormalizePunctuationAndSpaces(string text)
     {
-        return string.Join(" ", text.Split(new[] { ' ', '\u00A0', '\t' }, StringSplitOptions.RemoveEmptyEntries));
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+
+        string normalized = text
+            .Replace('«', '"')
+            .Replace('»', '"')
+            .Replace('“', '"')
+            .Replace('”', '"')
+            .Replace('\u00A0', ' ');
+
+        return string.Join(" ", normalized.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries));
     }
 
     private void PreserveSpaces(Text textNode)

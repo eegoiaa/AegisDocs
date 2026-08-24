@@ -11,4 +11,9 @@ public interface ILocalAiService : IDisposable
     /// Анализирует кусок текста и возвращает результат.
     /// </summary>
     Task<string> AnalyzeTextAsync(string systemPrompt, string userText, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Отправка управляющей команды CANCEL в контрольный пайп сервера для мгновенной остановки инференса.
+    /// </summary>
+    Task CancelCurrentTaskAsync();
 }

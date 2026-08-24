@@ -69,12 +69,24 @@ public partial class MainWindowViewModel
     }
 
     [RelayCommand]
-    private void CancelAnalysis()
+    private async Task CancelAnalysisAsync()
     {
-        if (IsAnalyzing && _analysisCts != null)
+        if (IsAnalyzing)
         {
             ExtractedText = "Отмена анализа...";
-            _analysisCts.Cancel();
+
+            _analysisCts?.Cancel();
+
+            if (_aiService != null)
+            {
+                try
+                {
+                    await _aiService.CancelCurrentTaskAsync();
+                }
+                catch
+                {
+                }
+            }
         }
     }
 }
