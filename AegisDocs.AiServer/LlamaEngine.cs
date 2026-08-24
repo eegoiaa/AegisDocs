@@ -3,6 +3,7 @@ using LLama.Common;
 using LLama.Sampling;
 using System.Text;
 
+
 namespace AegisDocs.AiServer;
 
 public class LlamaEngine : IDisposable
@@ -10,6 +11,8 @@ public class LlamaEngine : IDisposable
     private LLamaWeights? _weights;
     private LLamaContext? _context;
     private InteractiveExecutor? _executor;
+    private ModelParams? _parameters;
+    private readonly object _syncLock = new();
 
     public bool IsInitialized => _weights != null && _context != null && _executor != null;
 
@@ -17,21 +20,28 @@ public class LlamaEngine : IDisposable
     {
         if (IsInitialized) return;
 
-        var parameters = new ModelParams(modelPath)
+        _parameters = new ModelParams(modelPath)
         {
             ContextSize = 4096,
             GpuLayerCount = 0
         };
 
-        _weights = LLamaWeights.LoadFromFile(parameters);
-        _context = _weights.CreateContext(parameters);
+        _weights = LLamaWeights.LoadFromFile(_parameters);
+        _context = _weights.CreateContext(_parameters);
         _executor = new InteractiveExecutor(_context);
     }
 
     public async Task<string> GenerateResponseAsync(string systemPrompt, string userText, CancellationToken cancellationToken)
     {
-        if (!IsInitialized || _executor == null || _context == null)
+        if (!IsInitialized || _parameters == null || _weights == null)
             throw new InvalidOperationException("LlamaEngine не инициализирован");
+
+        lock (_syncLock)
+        {
+            _context?.Dispose();
+            _context = _weights.CreateContext(_parameters);
+            _executor = new InteractiveExecutor(_context);
+        }
 
         string formattedPrompt = $"<|system|>\n{systemPrompt}</s>\n<|user|>\n{userText}</s>\n<|assistant|>\n";
 
@@ -54,8 +64,6 @@ public class LlamaEngine : IDisposable
             responseBuilder.Append(token);
 
             string currentText = responseBuilder.ToString();
-
-            // Автоостановка генерации сразу после закрытия первого массива [ ... ]
             if (IsCompleteJsonArray(currentText))
             {
                 break;

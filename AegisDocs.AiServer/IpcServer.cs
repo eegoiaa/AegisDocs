@@ -10,6 +10,10 @@ public record AiResponseDto(string Answer, bool IsSuccess, string ErrorMessage);
 public class IpcServer
 {
     private readonly LlamaEngine _engine;
+    private const string DataPipeName = "AegisAiPipe";
+    private const string ControlPipeName = "AegisAiControlPipe";
+
+    private CancellationTokenSource? _currentGenerationCts;
 
     public IpcServer(LlamaEngine engine)
     {
@@ -18,53 +22,109 @@ public class IpcServer
 
     public async Task StartAsync()
     {
-        Console.WriteLine("Ожидание подключения интерфейса Avalonia...");
+        Console.WriteLine("=== Сервер ИИ запущен и ожидает запросы ===");
 
-        using var pipeServer = new NamedPipeServerStream("AegisAiPipe", PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-        await pipeServer.WaitForConnectionAsync();
-        Console.WriteLine("=== Интерфейс подключен! ===");
-
-        using var reader = new StreamReader(pipeServer, new UTF8Encoding(false));
-        using var writer = new StreamWriter(pipeServer, new UTF8Encoding(false)) { AutoFlush = true };
+        _ = StartControlListenerAsync();
 
         while (true)
         {
-            string? rawJsonLine = await reader.ReadLineAsync();
+            using var pipeServer = new NamedPipeServerStream(
+                DataPipeName,
+                PipeDirection.InOut,
+                NamedPipeServerStream.MaxAllowedServerInstances,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous);
 
-            if (string.IsNullOrEmpty(rawJsonLine)) continue;
-            if (rawJsonLine == "EXIT") break;
-
-            AiResponseDto responseObj;
             try
             {
+                await pipeServer.WaitForConnectionAsync();
+                Console.WriteLine("\n[IPC] Клиент подключился к каналу данных...");
+
+                using var reader = new StreamReader(pipeServer, new UTF8Encoding(false));
+                using var writer = new StreamWriter(pipeServer, new UTF8Encoding(false)) { AutoFlush = true };
+
+                string? rawJsonLine = await reader.ReadLineAsync();
+                if (string.IsNullOrEmpty(rawJsonLine)) continue;
+
                 var request = JsonSerializer.Deserialize<AiRequestDto>(rawJsonLine);
-                if (request == null) throw new Exception("Пришел пустой JSON");
+                if (request == null) throw new Exception("Пустой JSON-запрос");
 
-                Console.WriteLine("Получен текст. Анализирую...");
+                Console.WriteLine("[IPC] Запуск генерации...");
 
-                // Передаем параметры раздельно и получаем готовый ответ через await
-                string aiResult = await _engine.GenerateResponseAsync(
-                    request.SystemPrompt,
-                    request.DocumentText,
-                    CancellationToken.None
-                );
+                _currentGenerationCts = new CancellationTokenSource();
 
-                Console.WriteLine(aiResult);
-                Console.WriteLine();
+                string aiResult = string.Empty;
+                bool isSuccess = false;
+                string errorMessage = string.Empty;
 
-                responseObj = new AiResponseDto(aiResult, true, "");
+                try
+                {
+                    aiResult = await _engine.GenerateResponseAsync(
+                        request.SystemPrompt,
+                        request.DocumentText,
+                        _currentGenerationCts.Token
+                    );
+                    isSuccess = true;
+                    Console.WriteLine("[IPC] Генерация успешно завершена.");
+                }
+                catch (OperationCanceledException)
+                {
+                    Console.WriteLine("[IPC] Генерация прервана по команде CANCEL.");
+                    errorMessage = "Операция отменена.";
+                }
+
+                if (pipeServer.IsConnected)
+                {
+                    var responseObj = new AiResponseDto(aiResult, isSuccess, errorMessage);
+                    string jsonResponse = JsonSerializer.Serialize(responseObj);
+                    await writer.WriteLineAsync(jsonResponse);
+                    await writer.FlushAsync();
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ОШИБКА ОБРАБОТКИ]: {ex.Message}");
-                responseObj = new AiResponseDto("", false, ex.Message);
+                Console.WriteLine($"[IPC ОШИБКА]: {ex.Message}");
             }
+            finally
+            {
+                _currentGenerationCts?.Dispose();
+                _currentGenerationCts = null;
 
-            // Упаковываем ответ в JSON и отправляем ОДНОЙ строкой
-            string jsonResponse = JsonSerializer.Serialize(responseObj);
-            await writer.WriteLineAsync(jsonResponse);
-            await writer.FlushAsync();
-            Console.WriteLine("=== Ответ отправлен в UI ===");
+                try
+                {
+                    if (pipeServer.IsConnected) pipeServer.Disconnect();
+                }
+                catch { }
+            }
+        }
+    }
+
+    private async Task StartControlListenerAsync()
+    {
+        while (true)
+        {
+            try
+            {
+                using var controlPipe = new NamedPipeServerStream(
+                    ControlPipeName,
+                    PipeDirection.InOut,
+                    NamedPipeServerStream.MaxAllowedServerInstances,
+                    PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous);
+
+                await controlPipe.WaitForConnectionAsync();
+                using var reader = new StreamReader(controlPipe, new UTF8Encoding(false));
+
+                string? cmd = await reader.ReadLineAsync();
+                if (cmd == "CANCEL")
+                {
+                    Console.WriteLine("[IPC-CONTROL] Получена команда CANCEL. Прерывание...");
+                    _currentGenerationCts?.Cancel();
+                }
+            }
+            catch
+            {
+            }
         }
     }
 }

@@ -1,8 +1,7 @@
 ﻿namespace AegisDocs.Core.Interfaces;
 
-public interface IIpcClient : IDisposable
+public interface IIpcClient
 {
-    Task ConnectAsync(string pipeName, int timeoutMs);
-    Task<string> SendAndReceiveAsync(string message, CancellationToken cancellationToken);
-    void SendDisconnectSignal();
+    Task<string> SendAndReceiveAsync(string message, CancellationToken cancellationToken = default);
+    Task SendCancelSignalAsync();
 }

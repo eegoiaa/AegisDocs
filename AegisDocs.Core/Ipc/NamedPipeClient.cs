@@ -6,50 +6,39 @@ namespace AegisDocs.Core.Ipc;
 
 public class NamedPipeClient : IIpcClient
 {
-    private NamedPipeClientStream? _pipeClient;
-    private StreamReader? _reader;
-    private StreamWriter? _writer;
+    private const string DataPipeName = "AegisAiPipe";
+    private const string ControlPipeName = "AegisAiControlPipe";
 
-    public async Task ConnectAsync(string pipeName, int timeoutMs)
+    public async Task<string> SendAndReceiveAsync(string message, CancellationToken cancellationToken = default)
     {
-        await Task.Run(async () =>
+        using var pipeClient = new NamedPipeClientStream(".", DataPipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+
+        await pipeClient.ConnectAsync(30000, cancellationToken);
+
+        using var reader = new StreamReader(pipeClient, new UTF8Encoding(false));
+        using var writer = new StreamWriter(pipeClient, new UTF8Encoding(false)) { AutoFlush = true };
+
+        await writer.WriteLineAsync(message.AsMemory(), cancellationToken);
+        await writer.FlushAsync(cancellationToken);
+
+        string? response = await reader.ReadLineAsync(cancellationToken);
+
+        return response ?? throw new InvalidOperationException("Сервер вернул пустой ответ.");
+    }
+
+    public async Task SendCancelSignalAsync()
+    {
+        try
         {
-            _pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-            await _pipeClient.ConnectAsync(timeoutMs);
+            using var controlClient = new NamedPipeClientStream(".", ControlPipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+            await controlClient.ConnectAsync(1000);
 
-            _reader = new StreamReader(_pipeClient, new UTF8Encoding(false));
-            _writer = new StreamWriter(_pipeClient, new UTF8Encoding(false)) { AutoFlush = true };
-        });
-    }
-
-    public async Task<string> SendAndReceiveAsync(string message, CancellationToken cancellationToken)
-    {
-        if (_writer == null || _reader == null) throw new InvalidOperationException("Пайп не подключен!");
-
-        return await Task.Run(async () =>
+            using var writer = new StreamWriter(controlClient, new UTF8Encoding(false)) { AutoFlush = true };
+            await writer.WriteLineAsync("CANCEL");
+            await writer.FlushAsync();
+        }
+        catch
         {
-            try
-            {
-                await _writer.WriteLineAsync(message);
-                await _writer.FlushAsync();
-
-                string? response = await _reader.ReadLineAsync();
-                return response ?? "Ошибка: Сервер вернул пустой ответ.";
-            }
-            catch (Exception ex)
-            {
-                return $"Ошибка канала связи: {ex.Message}";
-            }
-        }, cancellationToken);
-    }
-
-    public void SendDisconnectSignal()
-    {
-        try { _writer?.WriteLine("EXIT"); } catch { }
-    }
-
-    public void Dispose()
-    {
-        _pipeClient?.Dispose();
+        }
     }
 }
