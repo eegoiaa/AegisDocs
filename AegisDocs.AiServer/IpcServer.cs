@@ -42,17 +42,17 @@ public class IpcServer
 
                 Console.WriteLine("Получен текст. Анализирую...");
 
-                string combinedPrompt = $"{request.SystemPrompt}\n\nТекст документа:\n{request.DocumentText}\n\nОтвет:";
+                // Передаем параметры раздельно и получаем готовый ответ через await
+                string aiResult = await _engine.GenerateResponseAsync(
+                    request.SystemPrompt,
+                    request.DocumentText,
+                    CancellationToken.None
+                );
 
-                var sb = new StringBuilder();
-                await foreach (var token in _engine.GenerateResponseAsync(combinedPrompt))
-                {
-                    sb.Append(token);
-                    Console.Write(token);
-                }
+                Console.WriteLine(aiResult);
                 Console.WriteLine();
 
-                responseObj = new AiResponseDto(sb.ToString().Trim(), true, "");
+                responseObj = new AiResponseDto(aiResult, true, "");
             }
             catch (Exception ex)
             {
@@ -60,7 +60,7 @@ public class IpcServer
                 responseObj = new AiResponseDto("", false, ex.Message);
             }
 
-            // 4. Упаковываем ответ в JSON и отправляем ОДНОЙ строкой
+            // Упаковываем ответ в JSON и отправляем ОДНОЙ строкой
             string jsonResponse = JsonSerializer.Serialize(responseObj);
             await writer.WriteLineAsync(jsonResponse);
             await writer.FlushAsync();
